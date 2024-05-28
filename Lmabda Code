@@ -1,1 +1,493 @@
+//========================
+//Documenthandler function
+//=========================
 
+
+import json
+import boto3
+import botocore
+from decimal import Decimal
+from boto3.dynamodb.conditions import Key
+
+s3 = boto3.resource('s3')
+          
+
+
+def lambda_handler(event, context):
+    print('Request event: ', event)
+    response = None
+
+    try:
+        http_method = event.get('httpMethod')
+        
+        if http_method == 'GET':
+            bucket = event['pathParameters']['bucket']
+            patientfolder = event['pathParameters']['patientfolder']
+            response = get_list(bucket, patientfolder)
+        else:
+            response = build_response(404, '404 Not Found')
+
+    except Exception as e:
+        print('Error:', e)
+        response = build_response(400, 'Error processing request')
+    return response
+
+def get_list(bucket, patientfolder):
+    try:
+        my_bucket = s3.Bucket(bucket)
+        object_list = []
+        for object_summary in my_bucket.objects.filter(Prefix=patientfolder):
+            object_list.append(object_summary.key)
+            
+        return build_response(200, {'objects': object_list})
+
+    except botocore.exceptions.ClientError as e:
+        print(f"Error listing files in the folder: {e}")
+        return []
+
+
+
+def build_response(status_code, body):
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json'
+        },
+        'body': json.dumps(body, cls=DecimalEncoder)
+    }
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            # Check if it's an int or a float
+            if obj % 1 == 0:
+                return int(obj)
+            else:
+                return float(obj)
+        # Let the base class default method raise the TypeError
+        return super(DecimalEncoder, self).default(obj)
+
+
+//=====================
+//user handler
+//=====================
+
+
+import json
+import boto3
+from botocore.exceptions import ClientError
+from decimal import Decimal
+from boto3.dynamodb.conditions import Key
+
+# Initialize the DynamoDB client
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+dynamodb_Patient_table = dynamodb.Table('Patient')
+
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+dynamodb_Admin_table = dynamodb.Table('admin')
+
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+dynamodb_Doctor_table = dynamodb.Table('doctor')
+
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+dynamodb_Receptionist_table = dynamodb.Table('receptionist')
+
+#Paths
+patient_path = '/patient'
+patients_path = '/patients'
+
+admin_path = '/admin'
+admins_path = '/admins'
+
+doctor_path = '/doctor'
+doctors_path = '/doctors'
+
+receptionist_path = '/receptionist'
+receptionists_path = '/receptionists'
+
+#Checks to see what is being requested from the api
+def lambda_handler(event, context):
+    print('Request event: ', event)
+    response = None
+
+    try:
+        http_method = event.get('httpMethod')
+        path = event.get('path')
+
+        #Patient paths
+        if http_method == 'GET' and path == patient_path:
+            patient_id = event['queryStringParameters']['patientid']
+            response = get_patient(patient_id)
+        elif http_method == 'POST' and path == patient_path:
+            response = save_patient(json.loads(event['body']))
+        elif http_method == 'GET' and path == patients_path:
+            response = get_patients()
+        elif http_method == 'PATCH' and path == patient_path:
+            body = json.loads(event['body'])
+            response = modify_patient(body['patientid'], body['updateKey'], body['updateValue'])
+        elif http_method == 'DELETE' and path == patient_path:
+            body = json.loads(event['body'])
+            response = delete_patient(body['patientid'])
+
+        #Doctor paths
+        elif http_method == 'GET' and path == doctor_path:
+            doctor_id = event['queryStringParameters']['doctorid']
+            response = get_doctor(doctor_id)
+        elif http_method == 'POST' and path == doctor_path:
+            response = save_doctor(json.loads(event['body']))
+        elif http_method == 'GET' and path == doctors_path:
+            response = get_doctors()
+        elif http_method == 'PATCH' and path == doctor_path:
+            body = json.loads(event['body'])
+            response = modify_doctor(body['doctorid'], body['updateKey'], body['updateValue'])
+        elif http_method == 'DELETE' and path == doctor_path:
+            body = json.loads(event['body'])
+            response = delete_doctor(body['doctorid'])
+
+        #Admin paths
+        elif http_method == 'GET' and path == admin_path:
+            admin_id = event['queryStringParameters']['adminid']
+            response = get_admin(admin_id)
+        elif http_method == 'POST' and path == admin_path:
+            response = save_admin(json.loads(event['body']))
+        elif http_method == 'GET' and path == admins_path:
+            response = get_admins()
+        elif http_method == 'PATCH' and path == admin_path:
+            body = json.loads(event['body'])
+            response = modify_admin(body['patientid'], body['updateKey'], body['updateValue'])
+        elif http_method == 'DELETE' and path == admin_path:
+            body = json.loads(event['body'])
+            response = delete_admin(body['patientid'])
+
+        #receptionist
+        elif http_method == 'GET' and path == receptionist_path:
+            receptionist_id = event['queryStringParameters']['receptionistid']
+            response = get_receptionist(receptionist_id)
+        elif http_method == 'POST' and path == receptionist_path:
+            response = save_receptionist(json.loads(event['body']))
+        elif http_method == 'GET' and path == receptionists_path:
+            response = get_receptionists()
+        elif http_method == 'PATCH' and path == receptionist_path:
+            body = json.loads(event['body'])
+            response = modify_receptionist(body['receptionistid'], body['updateKey'], body['updateValue'])
+        elif http_method == 'DELETE' and path == receptionist_path:
+            body = json.loads(event['body'])
+            response = delete_receptionist(body['patientid'])
+
+        else:
+            response = build_response(404, '404 Not Found')
+
+    except Exception as e:
+        print('Error:', e)
+        response = build_response(400, 'Error processing request owo')
+    return response
+
+
+#Patient functions
+def get_patient(patient_id):
+    try:
+        response = dynamodb_Patient_table.get_item(Key={'patientid': patient_id})
+        return build_response(200, response.get('Item'))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def save_patient(request_body):
+    try:
+        dynamodb_Patient_table.put_item(Item=request_body)
+        body = {
+            'Operation': 'SAVE',
+            'Message': 'SUCCESS',
+            'Item': request_body
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def modify_patient(patient_id, update_key, update_value):
+    try:
+        response = dynamodb_Patient_table.update_item(
+            Key={'patientid': patient_id},
+            UpdateExpression=f'SET {update_key} = :value',
+            ExpressionAttributeValues={':value': update_value},
+            ReturnValues='UPDATED_NEW'
+        )
+        body = {
+            'Operation': 'UPDATE',
+            'Message': 'SUCCESS',
+            'UpdatedAttributes': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def delete_patient(patient_id):
+    try:
+        response = dynamodb_Patient_table.delete_item(
+            Key={'patientid': patient_id},
+            ReturnValues='ALL_OLD'
+        )
+        body = {
+            'Operation': 'DELETE',
+            'Message': 'SUCCESS',
+            'Item': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def get_patients():
+    try:
+        scan_params = {
+            'TableName': dynamodb_Patient_table.name
+        }
+        return build_response(200, scan_dynamo_records1(scan_params, []))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+
+#Doctors Functions
+def get_doctor(doctor_id):
+    try:
+        response = dynamodb_Doctor_table.get_item(Key={'doctorid': doctor_id})
+        return build_response(200, response.get('Item'))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def save_doctor(request_body):
+    try:
+        dynamodb_Doctor_table.put_item(Item=request_body)
+        body = {
+            'Operation': 'SAVE',
+            'Message': 'SUCCESS',
+            'Item': request_body
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def modify_doctor(doctor_id, update_key, update_value):
+    try:
+        response = dynamodb_Doctor_table.update_item(
+            Key={'patientid': doctor_id},
+            UpdateExpression=f'SET {update_key} = :value',
+            ExpressionAttributeValues={':value': update_value},
+            ReturnValues='UPDATED_NEW'
+        )
+        body = {
+            'Operation': 'UPDATE',
+            'Message': 'SUCCESS',
+            'UpdatedAttributes': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def delete_doctor(doctor_id):
+    try:
+        response = dynamodb_Doctor_table.delete_item(
+            Key={'doctorid': doctor_id},
+            ReturnValues='ALL_OLD'
+        )
+        body = {
+            'Operation': 'DELETE',
+            'Message': 'SUCCESS',
+            'Item': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def get_doctors():
+    try:
+        scan_params = {
+            'TableName': dynamodb_Doctor_table.name
+        }
+        return build_response(200, scan_dynamo_records2(scan_params, []))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+
+#Admin Funstions
+def get_admin(admin_id):
+    try:
+        response = dynamodb_Admin_table.get_item(Key={'adminid': admin_id})
+        return build_response(200, response.get('Item'))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def save_admin(request_body):
+    try:
+        dynamodb_Admin_table.put_item(Item=request_body)
+        body = {
+            'Operation': 'SAVE',
+            'Message': 'SUCCESS',
+            'Item': request_body
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def modify_admin(admin_id, update_key, update_value):
+    try:
+        response = dynamodb_Admin_table.update_item(
+            Key={'adminid': admin_id},
+            UpdateExpression=f'SET {update_key} = :value',
+            ExpressionAttributeValues={':value': update_value},
+            ReturnValues='UPDATED_NEW'
+        )
+        body = {
+            'Operation': 'UPDATE',
+            'Message': 'SUCCESS',
+            'UpdatedAttributes': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def delete_admin(admin_id):
+    try:
+        response = dynamodb_Admin_table.delete_item(
+            Key={'adminid': admin_id},
+            ReturnValues='ALL_OLD'
+        )
+        body = {
+            'Operation': 'DELETE',
+            'Message': 'SUCCESS',
+            'Item': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def get_admins():
+    try:
+        scan_params = {
+            'TableName': dynamodb_Admin_table.name
+        }
+        return build_response(200, scan_dynamo_records3(scan_params, []))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+
+#Receptionist Functions
+def get_receptionist(receptionist_id):
+    try:
+        response = dynamodb_Receptionist_table.get_item(Key={'receptionistid': receptionist_id})
+        return build_response(200, response.get('Item'))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def save_receptionist(request_body):
+    try:
+        dynamodb_Receptionist_table.put_item(Item=request_body)
+        body = {
+            'Operation': 'SAVE',
+            'Message': 'SUCCESS',
+            'Item': request_body
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def modify_receptionist(receptionist_id, update_key, update_value):
+    try:
+        response = dynamodb_Receptionist_table.update_item(
+            Key={'receptionistid': receptionist_id},
+            UpdateExpression=f'SET {update_key} = :value',
+            ExpressionAttributeValues={':value': update_value},
+            ReturnValues='UPDATED_NEW'
+        )
+        body = {
+            'Operation': 'UPDATE',
+            'Message': 'SUCCESS',
+            'UpdatedAttributes': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def delete_receptionist(receptionist_id):
+    try:
+        response = dynamodb_Receptionist_table.delete_item(
+            Key={'receptionistid': receptionist_id},
+            ReturnValues='ALL_OLD'
+        )
+        body = {
+            'Operation': 'DELETE',
+            'Message': 'SUCCESS',
+            'Item': response
+        }
+        return build_response(200, body)
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+def get_receptionists():
+    try:
+        scan_params = {
+            'TableName': dynamodb_Receptionist_table.name
+        }
+        return build_response(200, scan_dynamo_records4(scan_params, []))
+    except ClientError as e:
+        print('Error:', e)
+        return build_response(400, e.response['Error']['Message'])
+
+#scan functions
+def scan_dynamo_records1(scan_params, item_array):
+    response = dynamodb_Patient_table.scan(**scan_params)
+    item_array.extend(response.get('Items', []))
+
+    if 'LastEvaluatedKey' in response:
+        scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        return scan_dynamo_records(scan_params, item_array)
+    else:
+        return {'employees': item_array}
+
+def scan_dynamo_records2(scan_params, item_array):
+    response = dynamodb_Doctor_table.scan(**scan_params)
+    item_array.extend(response.get('Items', []))
+
+    if 'LastEvaluatedKey' in response:
+        scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        return scan_dynamo_records(scan_params, item_array)
+    else:
+        return {'doctors': item_array}
+
+def scan_dynamo_records3(scan_params, item_array):
+    response = dynamodb_Admin_table.scan(**scan_params)
+    item_array.extend(response.get('Items', []))
+
+    if 'LastEvaluatedKey' in response:
+        scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        return scan_dynamo_records(scan_params, item_array)
+    else:
+        return {'Admins': item_array}
+
+def scan_dynamo_records4(scan_params, item_array):
+    response = dynamodb_Receptionist_table.scan(**scan_params)
+    item_array.extend(response.get('Items', []))
+
+    if 'LastEvaluatedKey' in response:
+        scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        return scan_dynamo_records(scan_params, item_array)
+    else:
+        return {'Receptionists': item_array}
+
+#Other Functions
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            # Check if it's an int or a float
+            if obj % 1 == 0:
+                return int(obj)
+            else:
+                return float(obj)
+        # Let the base class default method raise the TypeError
+        return super(DecimalEncoder, self).default(obj)
+def build_response(status_code, body):
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json'
+        },
+        'body': json.dumps(body, cls=DecimalEncoder)
+    }
