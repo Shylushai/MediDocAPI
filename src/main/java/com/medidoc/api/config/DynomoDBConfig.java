@@ -15,9 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 public class DynomoDBConfig {
     @Value("dynamodb.us-east-1.amazonaws.com")
     String endpoint;
-    @Value("AKIAZQ3DRRIWXFYRNAB6")
+    @Value("AKIAZQ3DRRIWX#######")
     String accesskey;
-    @Value("r637P8Bf+NO402Qcc9KLSGYvh783tqZgPNRbYGUP")
+    @Value("r637P8Bf+NO402Qcc9KLSGYvh783tqZg########")
     String secretkey;
     @Value("us-east-1")
     String region;
